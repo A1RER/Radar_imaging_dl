@@ -18,7 +18,7 @@ import matplotlib.gridspec as gridspec
 matplotlib.rcParams['font.sans-serif'] = ['SimHei', 'Microsoft YaHei', 'DejaVu Sans']
 matplotlib.rcParams['axes.unicode_minus'] = False
 
-from .dataset import RadarDataset
+from .dataset import RadarDataset, _add_complex_awgn
 from .model   import CADMMNet
 from .utils   import psnr, imaging_entropy, to_numpy_amp_db
 
@@ -110,6 +110,82 @@ def plot_comparison(z_clean, z_cadmm, z_net, save_path=None):
     plt.show()
 
 
+# ── SNR 鲁棒性扫描 ────────────────────────────────────────────────────
+
+def snr_sweep(model, test_ds, A, snr_list, n_samples, device):
+    """
+    对测试集每个样本在多个 SNR 下加噪，比较传统 CADMM 与网络的 PSNR。
+
+    Returns
+    -------
+    dict: {'snr': [...], 'cadmm_psnr': [...], 'net_psnr': [...],
+           'cadmm_ent': [...], 'net_ent': [...]}
+    """
+    n_eval = min(n_samples, len(test_ds))
+    results = {
+        'snr':        list(snr_list),
+        'cadmm_psnr': [],
+        'net_psnr':   [],
+        'cadmm_ent':  [],
+        'net_ent':    [],
+    }
+
+    for snr_db in snr_list:
+        cadmm_p, net_p, cadmm_e, net_e = [], [], [], []
+        for i in range(n_eval):
+            sig, z_clean = test_ds[i]
+            sig     = _add_complex_awgn(sig.to(device), snr_db)
+            z_clean = z_clean.to(device)
+
+            with torch.no_grad():
+                z_cadmm = traditional_cadmm(sig, A)
+                z_net   = model(sig.unsqueeze(0), A).squeeze(0)
+
+            cadmm_p.append(psnr(z_cadmm, z_clean).item())
+            net_p.append(  psnr(z_net,   z_clean).item())
+            cadmm_e.append(imaging_entropy(z_cadmm).item())
+            net_e.append(  imaging_entropy(z_net).item())
+
+        results['cadmm_psnr'].append(np.mean(cadmm_p))
+        results['net_psnr'].append(  np.mean(net_p))
+        results['cadmm_ent'].append( np.mean(cadmm_e))
+        results['net_ent'].append(   np.mean(net_e))
+        print(f'SNR={snr_db:>5.1f} dB  '
+              f'CADMM PSNR={results["cadmm_psnr"][-1]:>6.2f}  '
+              f'网络 PSNR={results["net_psnr"][-1]:>6.2f}  '
+              f'增益={results["net_psnr"][-1]-results["cadmm_psnr"][-1]:+.2f} dB')
+
+    return results
+
+
+def plot_snr_curve(results, save_path=None):
+    fig, axes = plt.subplots(1, 2, figsize=(11, 4))
+    snrs = results['snr']
+
+    axes[0].plot(snrs, results['cadmm_psnr'], 'o--', label='传统 CADMM', color='#888')
+    axes[0].plot(snrs, results['net_psnr'],   's-',  label='深度展开网络', color='#d62728')
+    axes[0].set_xlabel('输入 SNR (dB)')
+    axes[0].set_ylabel('重建 PSNR (dB)')
+    axes[0].set_title('不同噪声水平下的重建质量')
+    axes[0].grid(True, alpha=0.3)
+    axes[0].legend()
+
+    axes[1].plot(snrs, results['cadmm_ent'], 'o--', label='传统 CADMM', color='#888')
+    axes[1].plot(snrs, results['net_ent'],   's-',  label='深度展开网络', color='#d62728')
+    axes[1].set_xlabel('输入 SNR (dB)')
+    axes[1].set_ylabel('成像熵 (越低越聚焦)')
+    axes[1].set_title('不同噪声水平下的图像聚焦度')
+    axes[1].grid(True, alpha=0.3)
+    axes[1].legend()
+
+    plt.tight_layout()
+    if save_path:
+        os.makedirs(os.path.dirname(save_path) or '.', exist_ok=True)
+        plt.savefig(save_path, dpi=150, bbox_inches='tight')
+        print(f'SNR 曲线已保存：{save_path}')
+    plt.show()
+
+
 # ── 主评估流程 ────────────────────────────────────────────────────────
 
 def evaluate(args):
@@ -126,6 +202,18 @@ def evaluate(args):
     model.eval()
     print(f'已加载模型：{args.ckpt}（K={ckpt["K"]} 层，'
           f'验证 PSNR={ckpt["val_psnr"]:.2f} dB）')
+
+    # SNR 鲁棒性扫描模式（不画单张对比图，直接跑曲线）
+    if args.snr_sweep:
+        snr_list = np.arange(args.snr_min, args.snr_max + 1e-6, args.snr_step).tolist()
+        os.makedirs(args.output_dir, exist_ok=True)
+        print(f'\n── SNR 鲁棒性扫描：{args.snr_min}–{args.snr_max} dB '
+              f'（步长 {args.snr_step}），每点 {args.n_samples} 样本 ──')
+        results = snr_sweep(model, test_ds, A, snr_list, args.n_samples, device)
+        plot_snr_curve(results, save_path=os.path.join(args.output_dir, 'snr_curve.png'))
+        np.savez(os.path.join(args.output_dir, 'snr_curve.npz'), **results)
+        print(f'原始数据已保存：{os.path.join(args.output_dir, "snr_curve.npz")}')
+        return
 
     # 批量评估
     cadmm_psnr_list, net_psnr_list   = [], []
@@ -170,6 +258,12 @@ def get_args():
     p.add_argument('--n_samples',   type=int, default=50,  help='评估样本数')
     p.add_argument('--save_images', type=int, default=5,   help='保存对比图数量')
     p.add_argument('--output_dir',  default='results')
+    # SNR 鲁棒性扫描
+    p.add_argument('--snr_sweep',   action='store_true',
+                   help='启用 SNR 鲁棒性扫描模式（生成 PSNR-SNR 曲线）')
+    p.add_argument('--snr_min',     type=float, default=0.0,  help='扫描起始 SNR (dB)')
+    p.add_argument('--snr_max',     type=float, default=30.0, help='扫描终止 SNR (dB)')
+    p.add_argument('--snr_step',    type=float, default=5.0,  help='扫描步长 (dB)')
     return p.parse_args()
 
 
