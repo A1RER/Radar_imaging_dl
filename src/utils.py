@@ -1,9 +1,26 @@
 """
 utils.py
-通用工具函数：dB转换、软阈值、图像质量指标
+通用工具函数：dB转换、软阈值、图像质量指标、随机种子控制
 """
 import torch
 import numpy as np
+import random
+
+
+# ── 随机种子 ──────────────────────────────────────────────────────────
+
+def seed_everything(seed: int = 42) -> None:
+    """
+    固定 random / numpy / torch 的随机种子，保证训练可复现。
+    注意：cuDNN deterministic 模式会降低训练速度，仅在需要精确复现时启用。
+    """
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark     = False
 
 
 # ── dB 转换 ──────────────────────────────────────────────────────────

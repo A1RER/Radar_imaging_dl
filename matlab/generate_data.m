@@ -105,8 +105,9 @@ end
 
 %% ── 保存 ────────────────────────────────────────────────────────────
 if ~exist('../data', 'dir'), mkdir('../data'); end
-save('../data/train.mat', 'tr_sig', 'tr_z', 'A', 'kx', '-v7.3');
-save('../data/test.mat',  'te_sig', 'te_z', 'A', 'kx', '-v7.3');
+% 使用 -v7 以便 Python 的 scipy.io.loadmat 读取（v7.3 是 HDF5，scipy 不兼容）
+save('../data/train.mat', 'tr_sig', 'tr_z', 'A', 'kx', '-v7');
+save('../data/test.mat',  'te_sig', 'te_z', 'A', 'kx', '-v7');
 fprintf('完成！训练集 %d 样本，测试集 %d 样本\n', N_train, N_test);
 
 
@@ -135,12 +136,12 @@ function z = run_admm(A, y, max_iter, lamda, rho)
     [~, nx] = size(A);
     nkr     = size(y, 2);
     u       = lamda / rho;
-    H_inv   = inv(A'*A + rho*eye(nx));
+    M_dec   = decomposition(A'*A + rho*eye(nx), 'chol');   % 预分解，避免重复求逆
     Aty     = A' * y;
     o       = zeros(nx, nkr);
     z       = zeros(nx, nkr);
     for k = 1:max_iter
-        xt  = H_inv * (Aty - o + rho*z);
+        xt  = M_dec \ (Aty - o + rho*z);
         a   = xt + o/rho;
         a_n = 20*log10(abs(a) ./ (max(abs(a(:)))+1e-10) + 1e-10);
         idx = double(a_n > -25);

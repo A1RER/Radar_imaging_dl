@@ -10,8 +10,13 @@ import argparse
 import os
 import torch
 import numpy as np
+import matplotlib
 import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
+
+# 支持中文显示（Windows/Linux 自动回退到系统已有字体）
+matplotlib.rcParams['font.sans-serif'] = ['SimHei', 'Microsoft YaHei', 'DejaVu Sans']
+matplotlib.rcParams['axes.unicode_minus'] = False
 
 from .dataset import RadarDataset
 from .model   import CADMMNet
