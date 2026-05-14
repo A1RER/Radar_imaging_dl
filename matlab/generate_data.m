@@ -13,7 +13,26 @@
 %   kx               [1, nkx]         real     - 方位波数向量
 
 clear; close all;
-addpath('../datafromlead/室外动目标成像跟踪源码-3车辆/')
+private_data_dir = getenv('RADAR_PRIVATE_DATA_DIR');
+if isempty(private_data_dir)
+    private_data_dir = fullfile('..', 'private_data');
+end
+
+% Private source data is intentionally not included in this public repository.
+% Put local signal files under private_data/ or set RADAR_PRIVATE_DATA_DIR.
+% Expected placeholders: signal_vehicle_1.mat, signal_vehicle_2.mat,
+% signal_vehicle_3.mat. Each file should contain one complex signal matrix.
+signal_files = {
+    'signal_vehicle_1.mat'
+    'signal_vehicle_2.mat'
+    'signal_vehicle_3.mat'
+};
+
+if isfile('local_data_config.m')
+    run('local_data_config.m');
+end
+
+addpath(private_data_dir);
 
 %% ── 雷达系统参数（与 OFDM_ISAR.m 保持一致） ────────────────────────
 c      = 3e8;
@@ -37,10 +56,7 @@ ttt    = linspace(0, tt_sub, nt);               % 每帧时间轴
 rMax   = 60;                                    % 成像距离范围 (m)
 
 %% ── 加载仿真信号 ────────────────────────────────────────────────────
-load('../datafromlead/室外动目标成像跟踪源码-3车辆/sig_1_car_4s.mat');
-load('../datafromlead/室外动目标成像跟踪源码-3车辆/sig_2_Trunk_4s.mat');
-load('../datafromlead/室外动目标成像跟踪源码-3车辆/sig_3_car_4s.mat');
-sig_clean = sig_1 + sig_2 + sig_3;
+sig_clean = load_private_signal_sum(private_data_dir, signal_files);
 
 %% ── 公共预处理 ──────────────────────────────────────────────────────
 fr1      = (-nR/2 : nR/2-1).' / nR * fs;
@@ -156,4 +172,26 @@ function out = add_noise(sig, snr_db)
     p_noise = p_sig / (10^(snr_db/10));
     noise   = sqrt(p_noise/2) * (randn(size(sig)) + 1j*randn(size(sig)));
     out     = sig + noise;
+end
+
+function sig_sum = load_private_signal_sum(data_dir, file_names)
+% Load local private signal files without hard-coding private paths in Git.
+    sig_sum = [];
+    for idx = 1:numel(file_names)
+        file_path = fullfile(data_dir, file_names{idx});
+        if ~isfile(file_path)
+            error(['Missing private signal file: %s\n' ...
+                   'Place it under private_data/ or set RADAR_PRIVATE_DATA_DIR.'], file_path);
+        end
+
+        data = load(file_path);
+        names = fieldnames(data);
+        sig = data.(names{1});
+
+        if isempty(sig_sum)
+            sig_sum = sig;
+        else
+            sig_sum = sig_sum + sig;
+        end
+    end
 end
