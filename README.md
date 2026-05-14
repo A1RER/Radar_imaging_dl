@@ -59,6 +59,14 @@ pip install -r requirements.txt
 
 ### Usage
 
+### Data Privacy
+
+Private radar source data is not included in this repository. Local data,
+generated datasets, checkpoints, and result figures are ignored by Git. The
+MATLAB data-generation script uses placeholder local signal filenames and can
+be pointed to a private data directory with `RADAR_PRIVATE_DATA_DIR` or
+`matlab/local_data_config.m`.
+
 #### 1. Generate Training Data
 
 Run `matlab/generate_data.m` in MATLAB (set working directory to `matlab/`).  
