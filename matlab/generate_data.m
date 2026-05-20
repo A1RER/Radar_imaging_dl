@@ -45,7 +45,7 @@ rRef   = sqrt(xa^2 + ya^2 + za^2);
 NoOFDM = 512;
 Ts     = 4;                                     % 总观测时间 (s)
 ts     = linspace(0, Ts, Ts*prf);
-nR     = NoOFDM + 1;
+nR     = NoOFDM;
 v      = 20;                                    % 平台速度 (m/s)
 
 tt_sub = 0.4;                                   % 子孔径时间 (s)
