@@ -22,11 +22,14 @@ from .utils   import psnr, seed_everything
 
 # ── 单 epoch 训练 ─────────────────────────────────────────────────────
 
-def train_epoch(model, loader, A, optimizer, criterion, device):
+def train_epoch(model, loader, A, optimizer, criterion, device, max_batches=None):
     model.train()
     total_loss = 0.0
+    n_batches = 0
     A = A.to(device)
-    for sig, z_clean in loader:
+    for batch_idx, (sig, z_clean) in enumerate(loader):
+        if max_batches is not None and batch_idx >= max_batches:
+            break
         sig     = sig.to(device)
         z_clean = z_clean.to(device)
 
@@ -37,24 +40,29 @@ def train_epoch(model, loader, A, optimizer, criterion, device):
         nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
         optimizer.step()
         total_loss += loss.item()
-    return total_loss / len(loader)
+        n_batches += 1
+    return total_loss / max(n_batches, 1)
 
 
 # ── 验证 / 测试 ───────────────────────────────────────────────────────
 
 @torch.no_grad()
-def evaluate(model, loader, A, criterion, device):
+def evaluate(model, loader, A, criterion, device, max_batches=None):
     model.eval()
     total_loss  = 0.0
     total_psnr  = 0.0
+    n_batches   = 0
     A = A.to(device)
-    for sig, z_clean in loader:
+    for batch_idx, (sig, z_clean) in enumerate(loader):
+        if max_batches is not None and batch_idx >= max_batches:
+            break
         sig     = sig.to(device)
         z_clean = z_clean.to(device)
         z_pred  = model(sig, A)
         total_loss += criterion(z_pred, z_clean).item()
         total_psnr += psnr(z_pred, z_clean).item()
-    n = len(loader)
+        n_batches += 1
+    n = max(n_batches, 1)
     return total_loss / n, total_psnr / n
 
 
@@ -103,8 +111,10 @@ def train(args):
     ckpt_path = os.path.join(args.save_dir, 'best.pth')
 
     for epoch in range(1, args.epochs + 1):
-        train_loss          = train_epoch(model, train_loader, A, optimizer, criterion, device)
-        val_loss, val_psnr  = evaluate(  model, val_loader,    A,            criterion, device)
+        train_loss          = train_epoch(model, train_loader, A, optimizer, criterion, device,
+                                          max_batches=args.max_train_batches)
+        val_loss, val_psnr  = evaluate(  model, val_loader,    A,            criterion, device,
+                                          max_batches=args.max_eval_batches)
         scheduler.step()
 
         print(f'[{epoch:3d}/{args.epochs}] '
@@ -126,8 +136,9 @@ def train(args):
             print(f'  → 保存最优模型 (val_loss={val_loss:.4f})')
 
     # 最终测试集评估
-    model.load_state_dict(torch.load(ckpt_path, map_location=device)['state_dict'])
-    test_loss, test_psnr = evaluate(model, test_loader, A, criterion, device)
+    model.load_state_dict(torch.load(ckpt_path, map_location=device, weights_only=False)['state_dict'])
+    test_loss, test_psnr = evaluate(model, test_loader, A, criterion, device,
+                                    max_batches=args.max_eval_batches)
     print(f'\n测试集结果：loss={test_loss:.4f}，PSNR={test_psnr:.2f} dB')
 
 
@@ -153,6 +164,10 @@ def get_args():
     p.add_argument('--lr',         type=float, default=1e-3)
     p.add_argument('--seed',       type=int,   default=42)
     p.add_argument('--save_dir',   default='checkpoints')
+    p.add_argument('--max_train_batches', type=int, default=None,
+                   help='调试/汇报用：每个 epoch 最多训练多少个 batch；默认跑完整训练集')
+    p.add_argument('--max_eval_batches',  type=int, default=None,
+                   help='调试/汇报用：验证/测试最多评估多少个 batch；默认跑完整数据集')
     return p.parse_args()
 
 
