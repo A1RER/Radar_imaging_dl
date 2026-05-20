@@ -99,6 +99,19 @@ Key options:
 --save_dir    str    Checkpoint directory        (default: checkpoints/)
 ```
 
+For a quick CPU-only pipeline check, run a very small debug job:
+
+```bash
+python -m src.train --K 1 --epochs 1 --batch_size 1 \
+  --max_train_batches 1 --max_eval_batches 1 \
+  --save_dir _debug_checkpoints
+```
+
+This verifies data loading, forward/backward propagation, checkpoint saving,
+and final test evaluation. It is not a performance run. Full `K=10` training
+is compute-heavy because each unrolled CADMM layer solves complex-valued
+linear systems; use a GPU or server for complete experiments.
+
 Best checkpoint is saved to `checkpoints/best.pth`.
 
 #### 3. Evaluate
@@ -108,6 +121,12 @@ python -m src.evaluate
 ```
 
 Outputs a table comparing the proposed network against traditional CADMM on PSNR and imaging entropy, and saves side-by-side comparison figures to `results/`.
+
+Current result figures should be interpreted carefully: short runs such as
+`K=1` or `K=2` with one epoch are intended to prove the pipeline, not to claim
+that the unrolled network outperforms traditional CADMM. For reporting, use
+full training plus systematic PSNR, imaging entropy, runtime, SNR sweep, and
+ablation comparisons.
 
 ### Method
 
@@ -223,6 +242,18 @@ python -m src.train
 --save_dir    str    权重保存目录       （默认：checkpoints/）
 ```
 
+如果只想在本地 CPU 上快速验证完整流程，可以运行一个很小的调试任务：
+
+```bash
+python -m src.train --K 1 --epochs 1 --batch_size 1 \
+  --max_train_batches 1 --max_eval_batches 1 \
+  --save_dir _debug_checkpoints
+```
+
+这个命令用于验证数据读取、前向/反向传播、checkpoint 保存和测试集评估流程，
+不是正式性能实验。完整 `K=10` 训练计算量较大，因为每一层展开 CADMM 都包含
+复数线性系统求解；正式实验建议使用 GPU 或服务器运行。
+
 最优模型权重保存至 `checkpoints/best.pth`。
 
 #### 3. 评估
@@ -232,6 +263,10 @@ python -m src.evaluate
 ```
 
 输出本网络与传统 CADMM 在 PSNR 和成像熵上的对比表格，并将并排对比图保存至 `results/`。
+
+当前结果图需要谨慎解释：例如 `K=1` 或 `K=2`、单 epoch 的短训练主要用于证明流程通，
+不能作为网络优于传统 CADMM 的正式证据。正式汇报和实验应基于完整训练，并系统比较
+PSNR、成像熵、推理时间、SNR 鲁棒性和消融实验。
 
 ### 方法
 
